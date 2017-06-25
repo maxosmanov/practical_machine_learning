@@ -1,0 +1,83 @@
+---
+title: "Practical Machine Learning"
+author: "Maksym Osmanov"
+date: "4 June 2017"
+output:  md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+```
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+#Goal of the project
+We want to predict whether people do exercises correctly or not based on the data from the electronic equipment such as Jawbone UP. Moreover, we want to classify the pattern to understand to which class the performance belongs. In future it allows to check whether people do exercises corrrectly and help them to improve. 
+
+
+# Training dataset
+Firstly, we load the dataser 
+```{r, cache = TRUE}
+library(readr)
+initial_dataset<- read.csv("C:/Users/maks/OneDrive/coursera/Data Science/Practical Mahine Learning/pml-training.csv")
+```
+Dataset contains 160 variables and about 20 000 observations which is really a lot and requires carefull feature selection. 
+
+We realise that many variables contains NA, meaning that measurements were not performed. Even though we can use different techniques to fill these lacking values we use this fact to delete variables which contain missing values. This is our process of feature elimination. In addition, we expect that names of features are related to belt, arm of dumbbell since we speak about physical exercises. The following code determines the new set of predictors which is reduced to 52 variables
+
+```{r, cache = TRUE}
+names_without_na = sapply(initial_dataset, function (x) any(is.na(x)))
+names_filled = sapply(initial_dataset, function (x)  any(x == ""))
+
+
+names_belt = grepl("belt", names(initial_dataset))
+names_arm = grepl("arm", names(initial_dataset))
+names_dumbbell = grepl("dumbbell", names(initial_dataset))
+
+predictors = subset(names(initial_dataset), (!names_without_na& !names_filled)& (names_belt|names_arm|names_dumbbell))
+```
+
+Thus we create the new dataset with the new predictors and the target variable Classe
+```{r, cache = TRUE}
+fitness_dataset = initial_dataset[, c(predictors, "classe")]
+```
+
+To avoid overfitting we need to divide our dataset into the training and testing part (it can be considered as 1-fold cross-validation). Following standard procedures we obtain the training and testing datasets  
+
+```{r, cache = TRUE}
+inTrainingSet = createDataPartition(fitness_dataset$classe, p = 0.7, list = FALSE)
+
+fitnessTrain = fitness_dataset[inTrainingSet,]
+fitnessTest = fitness_dataset[-inTrainingSet,]
+```
+
+and normalize them (by applying scaling and centering)
+```{r, cache = TRUE}
+preProcValues = preProcess(fitnessTest[, c(predictors, "classe")], method = c("center", "scale"))
+
+trainScaled = predict(preProcValues, fitnessTrain[, c(predictors, "classe")])
+testScaled = predict(preProcValues, fitnessTest[, c(predictors, "classe")])
+```
+
+We apply the Gradient Boosted Machine (GBM) to create model for predictions. This method is very good for classification with a good overall accuracy. Taking into account the huge amount of training data we do not expect overfit with the method. The only problem is time of training which is extremelly long.
+```{r, cache = TRUE}
+gbmModel = train(x = trainScaled[,predictors], y = trainScaled$classe, method ="gbm", verbose = FALSE)
+```
+
+After training the model we firstly compute the intrain accuracy equal to 0.974 which is a very good precision
+```{r, cache = TRUE}
+gbmPred = predict(gbmModel, trainScaled)
+confusionMatrix(gbmPred, trainScaled$classe)
+```
+Clearly, the accuracy is bit lower for the validation set and is equal to 0.9616 which is still an impressive value larger than 95%.
+```{r, cache = TRUE}
+gbmPredTest = predict(gbmModel, testScaled)
+confusionMatrix(gbmPredTest, testScaled$classe)
+```
+
+Therefore we expect the error of prediction to be smaller that 5%. 
+
+Finally, we apply the model to make a prediction for the unlabeled dataset.
